@@ -1,147 +1,87 @@
-#!python3
-# Usage -
-# 1. open cmd
-# 2. cd to the folder where these files are present
-# 3. type - python ytdown.py
-# the script will start working
-
-
 import os
 import subprocess
 from pytube import YouTube
-import random
 import requests
 import re
-import string
 
 
-#imp functions
-
-
-def foldertitle(url):
-
+def get_playlist_id(url):
     try:
         res = requests.get(url)
-    except:
-        print('no internet')
-        return False
+        res.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Error: {e}")
+        return None
 
-    plain_text = res.text
-
-    if 'list=' in url:
-        eq = url.rfind('=') + 1
-        cPL = url[eq:]
-
+    match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
+    if match:
+        return match.group(1)
     else:
-        print('Incorrect attempt.')
-        return False
-
-    return cPL
+        print("Error: Playlist ID not found in URL.")
+        return None
 
 
-
-def link_snatcher(url):
-    our_links = []
+def get_video_links(playlist_id):
     try:
-        res = requests.get(url)
-    except:
-        print('no internet')
-        return False
+        res = requests.get(f"https://youtube.com/playlist?list={playlist_id}")
+        res.raise_for_status()
+    except requests.RequestException as e:
+        print(f"Error: {e}")
+        return []
 
-    plain_text = res.text
-
-    if 'list=' in url:
-        eq = url.rfind('=') + 1
-        cPL = url[eq:]
-    else:
-        print('Incorrect Playlist.')
-        return False
-
-    tmp_mat = re.compile(r'watch\?v=\S+?list=' + cPL)
-    mat = re.findall(tmp_mat, plain_text)
-
-    for m in mat:
-        new_m = m.replace('&amp;', '&')
-        work_m = 'https://youtube.com/' + new_m
-        # print(work_m)
-        if work_m not in our_links:
-            our_links.append(work_m)
-
-    return our_links
+    video_links = re.findall(r'watch\?v=([a-zA-Z0-9_-]+)', res.text)
+    return ["https://youtube.com/watch?v=" + link for link in video_links]
 
 
-BASE_DIR = os.getcwd()
+def download_videos(links, resolution, save_path):
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
 
-print('WELCOME TO PLAYLIST DOWNLOADER DEVELOPED BY - www.github.com/mohit0101')
-
-url = str(input("\nspecify you playlist url\n"))
-
-print('\nCHOOSE ANY ONE - TYPE 360P OR 720P\n')
-user_res = str(input()).lower()
-
-
-print('...You choosed ' + user_res + ' resolution\n.')
-
-our_links = link_snatcher(url)
-
-os.chdir(BASE_DIR)
-
-new_folder_name = foldertitle(url)
-print(new_folder_name[:7])
-
-try:
-    os.mkdir(new_folder_name[:7])
-except:
-    print('folder already exists')
-
-os.chdir(new_folder_name[:7])
-SAVEPATH = os.getcwd()
-print(f'\n files will be saved to {SAVEPATH}')
-
-x=[]
-for root, dirs, files in os.walk(".", topdown=False):
-    for name in files:
-        pathh = os.path.join(root, name)
-
-        
-        if os.path.getsize(pathh) < 1:
-            os.remove(pathh)
-        else:
-            x.append(str(name))
+    for link in links:
+        try:
+            yt = YouTube(link)
+            video_title = yt.title
+            video_stream = yt.streams.filter(progressive=True, file_extension='mp4', res=resolution).first()
+            if video_stream:
+                print(f"Downloading '{video_title}'...")
+                video_stream.download(save_path)
+                print(f"Downloaded '{video_title}'")
+            else:
+                print(f"No available {resolution} stream for '{video_title}'")
+        except Exception as e:
+            print(f"Error downloading '{link}': {e}")
 
 
-print('\nconnecting . . .\n')
+def main():
+    print("WELCOME TO PLAYLIST DOWNLOADER DEVELOPED BY - www.github.com/KunalG932")
+
+    playlist_url = input("\nPlease enter the playlist URL: ").strip()
+    resolution = input("\nPlease choose resolution (360p or 720p): ").strip().lower()
+
+    if resolution not in ["360p", "720p"]:
+        print("Invalid resolution. Please choose either 360p or 720p.")
+        return
+
+    playlist_id = get_playlist_id(playlist_url)
+    if not playlist_id:
+        return
+
+    video_links = get_video_links(playlist_id)
+    if not video_links:
+        print("No videos found in the playlist.")
+        return
+
+    print(f"\nDownloading {len(video_links)} videos...")
+
+    save_folder = os.path.join(os.getcwd(), playlist_id[:7])
+    download_videos(video_links, resolution, save_folder)
+
+    print("\nDownloading finished.")
+    print(f"All videos are saved at: {save_folder}")
+
+    # Open the directory in File Explorer
+    subprocess.Popen(f'explorer {save_folder}')
 
 
-print()
-
-for link in our_links:
-    try:
-        yt = YouTube(link)
-        main_title = yt.title
-        main_title = main_title + '.mp4'
-        main_title = main_title.replace('|', '')
-        
-    except:
-        print('connection problem..unable to fetch video info')
-        break
-
-    
-    if main_title not in x:
-
-        
-        if user_res == '360p' or user_res == '720p':
-            vid = yt.streams.filter(progressive=True, file_extension='mp4', res=user_res).first()
-            print('Downloading. . . ' + vid.default_filename + ' and its file size -> ' + str(round(vid.filesize / (1024 * 1024), 2)) + ' MB.')
-            vid.download(SAVEPATH)
-            print('Video Downloaded')
-        else:
-            print('something is wrong.. please rerun the script')
-
-
-    else:
-        print(f'\n skipping "{main_title}" video \n')
-
-
-print(' downloading finished')
-print(f'\n all your videos are saved at --> {SAVEPATH}')
+if __name__ == "__main__":
+    main()
